@@ -74,31 +74,12 @@ def _analysis_schema_hint() -> dict[str, Any]:
     """A JSON-Schema-ish hint for Gemini's structured output.
 
     Generated from the Pydantic model so the schema stays in lock-step.
-    Gemini's Developer API rejects `additionalProperties` (Enterprise-only),
-    so we strip it recursively before sending.
     """
     schema = ConversationAnalysis.model_json_schema()
     # Strip metadata that confuses some Gemini schema validators.
     schema.pop("title", None)
     schema.pop("$schema", None)
-    _strip_additional_properties(schema)
     return schema
-
-
-def _strip_additional_properties(node: Any) -> None:
-    """Remove `additionalProperties` from a nested JSON-schema dict (mutating).
-
-    Gemini's Developer API schema validator rejects `additionalProperties` at any
-    level with `additionalProperties is only supported in Gemini Enterprise
-    Agent Platform mode`. Pydantic emits it on every model by default.
-    """
-    if isinstance(node, dict):
-        node.pop("additionalProperties", None)
-        for value in node.values():
-            _strip_additional_properties(value)
-    elif isinstance(node, list):
-        for item in node:
-            _strip_additional_properties(item)
 
 
 def _render_retry_hint(error: str) -> str:
