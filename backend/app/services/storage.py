@@ -218,7 +218,15 @@ def list_recordings(
 
     items: list[RecordingListItem] = []
     for row in result.data or []:
-        analysis = (row.get("analyses") or [None])[0] if row.get("analyses") else None
+        # Supabase PostgREST can return a Foreign-Table join as a dict, a list
+        # of dicts, or null depending on cardinality. Normalize all three.
+        raw_analysis = row.get("analyses")
+        if isinstance(raw_analysis, list):
+            analysis = raw_analysis[0] if raw_analysis else None
+        elif isinstance(raw_analysis, dict):
+            analysis = raw_analysis
+        else:
+            analysis = None
         sentiment_label = None
         if analysis and analysis.get("sentiment"):
             sentiment_label = analysis["sentiment"].get("label")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ErrorView } from "@/components/ErrorView";
 import { NewRecordingForm } from "@/components/NewRecordingForm";
@@ -15,8 +15,18 @@ import type {
   CreateRecordingResponse,
   RecordingDetail,
   RecordingError,
+  RecordingStatus,
+  Transcript,
+  Analysis,
 } from "@/lib/types";
 
+/**
+ * View modes the center pane can be in.
+ *
+ * - empty:   URL input form
+ * - detail:  a previously-saved recording loaded by id
+ * - live:    a freshly-submitted recording being polled
+ */
 type View =
   | { mode: "empty" }
   | { mode: "detail"; id: string }
@@ -38,17 +48,30 @@ export default function Page() {
   const [detail, setDetail] = useState<RecordingDetail | null>(null);
   const [detailError, setDetailError] = useState<ApiError | null>(null);
 
+  // Live polling only active for `live` mode.
   const liveId = view.mode === "live" ? view.id : null;
   const poll = useRecordingPoll(liveId);
 
-  // Note: original Phase 4 implementation keyed the effect on `poll`, which
-  // is a fresh object reference every render — this caused an infinite list
-  // refresh loop during polling. Fixed in a follow-up commit.
+  // Refresh the sidebar exactly once when the polled recording first reaches
+  // a terminal state. We intentionally key the effect on a *transition*
+  // (previous → current status) so it doesn't fire on every poll tick —
+  // `poll` is a fresh object reference every render.
+  const liveStatus: RecordingStatus | null =
+    poll.phase === "polling" || poll.phase === "timed-out"
+      ? poll.detail.status
+      : null;
+  const prevLiveStatusRef = useRef<RecordingStatus | null>(null);
   useEffect(() => {
-    if (poll.phase === "polling" && TERMINAL_STATUSES.includes(poll.detail.status)) {
+    const prev = prevLiveStatusRef.current;
+    prevLiveStatusRef.current = liveStatus;
+    const becameTerminal =
+      liveStatus != null &&
+      TERMINAL_STATUSES.includes(liveStatus) &&
+      prev !== liveStatus;
+    if (becameTerminal) {
       void list.refresh();
     }
-  }, [poll, list]);
+  }, [liveStatus, list.refresh]);
 
   const handleSelectSidebar = useCallback(async (id: string) => {
     setView({ mode: "detail", id });
@@ -105,6 +128,19 @@ export default function Page() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Center pane — extracted so the page component stays declarative.
+// ---------------------------------------------------------------------------
+
+type RenderCenterArgs = {
+  view: View;
+  poll: ReturnType<typeof useRecordingPoll>;
+  detail: RecordingDetail | null;
+  detailError: ApiError | null;
+  handleSubmit: (audioUrl: string) => Promise<void>;
+  handleNew: () => void;
+};
+
 function renderCenter({
   view,
   poll,
@@ -112,14 +148,7 @@ function renderCenter({
   detailError,
   handleSubmit,
   handleNew,
-}: {
-  view: View;
-  poll: ReturnType<typeof useRecordingPoll>;
-  detail: RecordingDetail | null;
-  detailError: ApiError | null;
-  handleSubmit: (audioUrl: string) => Promise<void>;
-  handleNew: () => void;
-}): React.ReactNode {
+}: RenderCenterArgs): React.ReactNode {
   if (view.mode === "empty") {
     return <NewRecordingForm onSubmit={handleSubmit} />;
   }
@@ -137,22 +166,36 @@ function renderLiveView({
   handleNew: () => void;
 }): React.ReactNode {
   if (poll.phase === "idle") {
-    return <div className="max-w-2xl mx-auto w-full text-fg-muted">Starting...</div>;
+    return (
+      <div className="max-w-2xl mx-auto w-full text-fg-muted">Starting...</div>
+    );
   }
+
   if (poll.phase === "error") {
-    return <ErrorView error={{ code: poll.error.code, message: poll.error.message }} onRetry={handleNew} />;
+    return (
+      <ErrorView
+        error={{ code: poll.error.code, message: poll.error.message }}
+        onRetry={handleNew}
+      />
+    );
   }
+
   const polled = poll.detail;
+
   if (poll.phase === "timed-out") {
     return <StillProcessing onNew={handleNew} />;
   }
+
+  // poll.phase === "polling"
   if (polled.status === "completed") {
     return renderResultOrFallback(polled);
   }
   if (polled.status === "failed") {
-    return <ErrorView error={polled.error ?? SAFE_FALLBACK_ERROR} onRetry={handleNew} />;
+    return (
+      <ErrorView error={polled.error ?? SAFE_FALLBACK_ERROR} onRetry={handleNew} />
+    );
   }
-  return <ProcessingView status={polled.status as "pending" | "downloading" | "transcribing" | "analyzing" | "saving"} />;
+  return <ProcessingView status={polled.status as ProcessingStatus} />;
 }
 
 function renderDetailView({
@@ -165,10 +208,17 @@ function renderDetailView({
   handleNew: () => void;
 }): React.ReactNode {
   if (detailError) {
-    return <ErrorView error={{ code: detailError.code, message: detailError.message }} onRetry={handleNew} />;
+    return (
+      <ErrorView
+        error={{ code: detailError.code, message: detailError.message }}
+        onRetry={handleNew}
+      />
+    );
   }
   if (!detail) {
-    return <div className="max-w-2xl mx-auto w-full text-fg-muted">Loading...</div>;
+    return (
+      <div className="max-w-2xl mx-auto w-full text-fg-muted">Loading...</div>
+    );
   }
   if (detail.status === "completed") {
     return renderResultOrFallback(detail);
@@ -177,13 +227,19 @@ function renderDetailView({
     return <StillProcessing onNew={handleNew} />;
   }
   if (detail.status === "failed") {
-    return <ErrorView error={detail.error ?? SAFE_FALLBACK_ERROR} onRetry={handleNew} />;
+    return (
+      <ErrorView error={detail.error ?? SAFE_FALLBACK_ERROR} onRetry={handleNew} />
+    );
   }
-  return <div className="max-w-2xl mx-auto w-full text-fg-muted">Unknown state.</div>;
+  return (
+    <div className="max-w-2xl mx-auto w-full text-fg-muted">Unknown state.</div>
+  );
 }
 
 function renderResultOrFallback(detail: RecordingDetail): React.ReactNode {
-  if (!detail.transcript || !detail.analysis) {
+  const transcript: Transcript | undefined = detail.transcript ?? undefined;
+  const analysis: Analysis | undefined = detail.analysis ?? undefined;
+  if (!transcript || !analysis) {
     return (
       <div className="max-w-2xl mx-auto w-full text-fg-muted">
         Recording completed but no result was returned.
@@ -192,8 +248,8 @@ function renderResultOrFallback(detail: RecordingDetail): React.ReactNode {
   }
   return (
     <ResultView
-      analysis={detail.analysis}
-      transcript={detail.transcript}
+      analysis={analysis}
+      transcript={transcript}
       createdAt={detail.createdAt}
       completedAt={detail.completedAt}
     />
@@ -205,11 +261,24 @@ function StillProcessing({ onNew }: { onNew: () => void }) {
     <div className="max-w-2xl mx-auto w-full">
       <h1 className="text-xl font-semibold text-fg">Still processing</h1>
       <p className="mt-2 text-sm text-fg-muted">
-        This recording is taking longer than expected. Try again later.
+        This recording is taking longer than expected. You can close this page
+        or start a new analysis — the recording will be saved when it finishes,
+        and you can find it in the sidebar.
       </p>
-      <button type="button" onClick={onNew} className="mt-6 px-4 py-2 rounded-md bg-accent text-bg font-medium hover:bg-accent-hover transition">
+      <button
+        type="button"
+        onClick={onNew}
+        className="mt-6 px-4 py-2 rounded-md bg-accent text-bg font-medium hover:bg-accent-hover transition"
+      >
         Start a new analysis
       </button>
     </div>
   );
 }
+
+// Local alias to avoid re-importing the same type from `@/lib/types` with
+// different narrowing — used only inside renderLiveView.
+type ProcessingStatus = Extract<
+  RecordingStatus,
+  "pending" | "downloading" | "transcribing" | "analyzing" | "saving"
+>;

@@ -1,7 +1,9 @@
 /**
- * Typed REST client for the Voxera backend (Phase 4 version — eager module-load
- * check). Lazy version that defers the throw to first request lands in the
- * frontend-loop fix commit.
+ * Typed REST client for the Voxera backend.
+ *
+ * Backend URL is read from `NEXT_PUBLIC_API_URL`. The variable is resolved
+ * lazily on the first API call so the page can still render during
+ * `next build` even when the env var is not yet set in CI.
  */
 
 import type {
@@ -10,16 +12,6 @@ import type {
   RecordingDetail,
   RecordingListResponse,
 } from "./types";
-
-const BASE_URL = (() => {
-  const raw = process.env.NEXT_PUBLIC_API_URL?.trim();
-  if (!raw) {
-    throw new Error(
-      "NEXT_PUBLIC_API_URL is not set. Copy frontend/.env.example to .env.local."
-    );
-  }
-  return raw.replace(/\/$/, "");
-})();
 
 export class ApiError extends Error {
   readonly code: string;
@@ -32,8 +24,21 @@ export class ApiError extends Error {
   }
 }
 
+function getBaseUrl(): string {
+  const raw = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (!raw) {
+    throw new ApiError(
+      0,
+      "CONFIGURATION_ERROR",
+      "NEXT_PUBLIC_API_URL is not set. Copy frontend/.env.example to .env.local."
+    );
+  }
+  return raw.replace(/\/$/, "");
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`, {
+  const baseUrl = getBaseUrl();
+  const response = await fetch(`${baseUrl}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -48,7 +53,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       body = (await response.json()) as ApiErrorBody;
     } catch {
-      // ignore JSON parse error
+      // ignore JSON parse error, fall back to defaults below.
     }
     const code = body?.error?.code ?? "HTTP_ERROR";
     const message = body?.error?.message ?? `Request failed: ${response.status}`;

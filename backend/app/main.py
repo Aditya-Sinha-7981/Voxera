@@ -21,6 +21,10 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
+# Propagate uvicorn's access logger through our logging configuration so the
+# access log lines are visible alongside the application logs.
+logging.getLogger("uvicorn.access").handlers = logging.getLogger().handlers
+logging.getLogger("uvicorn.access").propagate = True
 
 
 @asynccontextmanager
