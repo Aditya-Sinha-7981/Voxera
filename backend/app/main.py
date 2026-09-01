@@ -1,4 +1,9 @@
-"""Phase 2 stub main.py — no provider shutdown on lifespan."""
+"""FastAPI app factory.
+
+Lifespan hooks:
+  * Startup: §7.4 reconcile stale recordings + §10.3 sweep orphan temp dirs.
+  * Shutdown: dispose the STT model so Whisper's memory is released.
+"""
 from __future__ import annotations
 
 import logging
@@ -9,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import health, recordings
 from app.config import get_settings
+from app.providers import get_stt_provider
 from app.services.reconciliation import reconcile_stale_recordings, sweep_orphan_temp_dirs
 
 logging.basicConfig(
@@ -21,7 +27,13 @@ logging.basicConfig(
 async def lifespan(app: FastAPI):
     await reconcile_stale_recordings()
     sweep_orphan_temp_dirs()
-    yield
+    try:
+        yield
+    finally:
+        provider = get_stt_provider()
+        shutdown = getattr(provider, "shutdown", None)
+        if callable(shutdown):
+            shutdown()
 
 
 def create_app() -> FastAPI:
