@@ -1,101 +1,31 @@
-# ---- OS ----
-.DS_Store
-Thumbs.db
-desktop.ini
+# Voxera monorepo
 
-# ---- Editors / IDEs ----
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.cursor/
-.aider*
-*.sublime-project
-*.sublime-workspace
+# Backend (FastAPI)
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/.env
+backend/.env.local
 
-# ---- Secrets / env ----
-.env
-.env.local
-.env.*.local
-.env.production
-.env.development
-!.env.example
-!.env.sample
+# Frontend (Next.js)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.turbo/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+frontend/.eslintcache
 
-# ---- Python (backend) ----
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-.venv/
-venv/
-env/
-ENV/
-.pytest_cache/
-.mypy_cache/
-.ruf_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
-.tox/
-.nox/
-.cache/
-*.egg-info/
-*.egg
-dist/
-build/
-pip-log.txt
-pip-delete-this-directory.txt
-*.log
-
-# ---- Node / Next.js (frontend) ----
-node_modules/
-.next/
-out/
-build/
-.turbo/
-.parcel-cache/
-.npm/
-.eslintcache
-.stylelintcache
-*.tsbuildinfo
-next-env.d.ts
-.pnp.*
-.yarn/cache
-.yarn/unplugged
-.yarn/build-state.yml
-.yarn/install-state.gz
-.pnp.*
-
-# ---- Supabase ----
+# Supabase local artifacts
 supabase/.branches/
 supabase/.temp/
-supabase/.env
 
-# ---- Temp audio (ARCHITECTURE.md §9) ----
+# Temp audio (ARCHITECTURE.md §9)
 tmp/
 temp/
 .hotel-ai-tmp/
-*.mp3.tmp
-*.wav.tmp
-*.m4a.tmp
-
-# ---- Models / large binary artifacts ----
-*.bin
-*.pt
-*.onnx
-*.h5
-*.pkl
-models/
-.weights/
-
-# ---- Misc ----
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
